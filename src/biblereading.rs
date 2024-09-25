@@ -3,7 +3,6 @@
 use core::fmt;
 
 use chrono::{Local, NaiveDate};
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone)]
 pub struct BibleReading {
@@ -54,7 +53,7 @@ fn get_biblereading_for_date(search_date: NaiveDate) -> Result<BibleReading, Bib
     if csv_reader_result.is_err() {
         return Err(BibleReadingNotFoundError::new(ErrorCause::InputFileNotFound));
     }
-    let mut csv_reader = csv_reader_result.unwrap();
+    let csv_reader = csv_reader_result.unwrap();
 
     for record in csv_reader.into_records() {
         match record {
