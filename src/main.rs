@@ -44,13 +44,15 @@ async fn send_daily_reminder(bot: Bot, msg: Message) -> Result<Message, RequestE
             bot.send_message(
                 msg.chat.id, 
                 format!(
-                    "Today's Bible reading: \n\nAT: {}\nNT: {}", 
+                    "*Today's Bible reading*: \n\nAT: {}\nNT: {}", 
                     todays_biblereading.old_testament_reading,
                     todays_biblereading.new_testament_reading
                 )
-            ).await
+            )
+            .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+            .await
         },
-        Err(error) => {
+        Err(error) => {     
             log::error!("{}", error.to_string());
 
             bot.send_message(msg.chat.id, "This is a reminder to read your bible!").await
