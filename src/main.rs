@@ -1,7 +1,8 @@
 use std::sync::{Arc,Mutex};
 
 use localize::msg_biblereading_not_found;
-use teloxide::{dispatching::dialogue::GetChatId, prelude::*, utils::command::BotCommands, RequestError};
+use serde::{ Serialize, Deserialize };
+use teloxide::{ prelude::*, utils::command::BotCommands, RequestError };
 
 mod biblereading;
 
@@ -25,7 +26,7 @@ enum Command {
     SetLang { lang_string: String }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct UserState {
     pub chat_id: ChatId,
     pub language: localize::Language,
@@ -90,12 +91,14 @@ async fn main() {
     pretty_env_logger::init();
     log::info!("Starting DailyBible Bot...");
 
-    let userstate_wrapper: UserStateWrapper = UserStateWrapper::new();
+    let user_state_wrapper: UserStateWrapper = UserStateWrapper::new();
 
     let bot: Bot = Bot::from_env();
 
     let bot_commands = Command::bot_commands();
-    let _ = bot.set_my_commands(bot_commands);
+    if bot.set_my_commands(bot_commands).await.is_err() {
+        log::warn!("Could not set up the commands.");
+    }
 
     let handler = Update::filter_message()
             .branch(dptree::entry()
@@ -104,62 +107,81 @@ async fn main() {
             );
 
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![userstate_wrapper])
+        .dependencies(dptree::deps![user_state_wrapper])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
 }   
 
-async fn answer(bot: Bot, msg: Message, cmd: Command, userstate_wrapper: UserStateWrapper) -> ResponseResult<()> {
+async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: UserStateWrapper) -> ResponseResult<()> {
     match cmd {
         Command::Help => bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?,
-        Command::SendDailyReminder => send_daily_reminder(bot, msg, userstate_wrapper).await?,
+        Command::SendDailyReminder => send_daily_reminder(bot, msg, user_state_wrapper).await?,
         Command::Start => bot.send_message(msg.chat.id, "This bot helps you to read your Bible daily. Type /help for more information").await?,
-        Command::SetupTimer => send_not_implemented(bot, msg).await?,
+        Command::SetupTimer => send_not_implemented(bot, msg, user_state_wrapper).await?,
         Command::UserInformation => bot.send_message(msg.chat.id, msg.chat.id.to_string()).await?,
-        Command::SetLang { lang_string } => set_language(bot, msg, userstate_wrapper, lang_string).await?,
+        Command::SetLang { lang_string } => set_language(bot, msg, user_state_wrapper, lang_string).await?,
     };  
     Ok(())
 }
 
-async fn send_daily_reminder(bot: Bot, msg: Message, userstate_wrapper: UserStateWrapper) -> Result<Message, RequestError> {
-    let userstate = userstate_wrapper.find_userstate(msg.chat.id);
+async fn send_daily_reminder(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper) -> Result<Message, RequestError> {
+    let userstate = user_state_wrapper.find_userstate(msg.chat.id);
 
     match biblereading::get_todays_biblereading() {
         Ok(todays_biblereading) => {
-            bot.send_message(
+            let _ = bot.send_message(
                 msg.chat.id,
-                msg_biblereading(userstate.language, todays_biblereading)
+                msg_biblereading(&userstate.language, todays_biblereading)
             )
             .parse_mode(teloxide::types::ParseMode::MarkdownV2)
-            .await
+            .await;
         },
         Err(error) => {     
             log::error!("{}", error.to_string());
 
-            bot.send_message(
+            let _ = bot.send_message(
                 msg.chat.id,
-                msg_biblereading_not_found(Language::English)
-            ).await
+                msg_biblereading_not_found(&userstate.language)
+            ).await;
         }
-    }
-}
+    };
 
-async fn send_not_implemented(bot: Bot, msg: Message) -> Result<Message, RequestError> {
+    let question_strings = msg_poll_text(&userstate.language);
+    bot.send_poll(
+        msg.chat.id, 
+        question_strings.get(0).unwrap(), 
+        vec![
+            question_strings.get(1).unwrap().clone(), 
+            question_strings.get(2).unwrap().clone()
+        ],
+    )
+    .is_anonymous(false)
+    .await
+}       
+
+async fn send_not_implemented(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper) -> Result<Message, RequestError> {
+    let language: Language = user_state_wrapper.find_userstate(msg.chat.id).language;
+    
     log::warn!("User {} called something which has not been implemented yet.", msg.chat.username().unwrap_or("unknown"));
-    bot.send_message(msg.chat.id, "Not implemented yet").await
+    bot.send_message(msg.chat.id, msg_not_implemented_yet(&language)).await
 }
 
-async fn set_language(bot: Bot, msg: Message, userstate_wrapper: UserStateWrapper, lang_str: String) -> Result<Message, RequestError> {
-    let mut user_state = userstate_wrapper.find_userstate(msg.chat.id);
+async fn set_language(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper, lang_str: String) -> Result<Message, RequestError> {
+    let mut user_state = user_state_wrapper.find_userstate(msg.chat.id);
     match lang_str.to_lowercase().as_str() {
         "de" => { user_state.language = Language::German; },
         "en" => { user_state.language = Language::English; },
-        _ => {}
+        _ => {
+                return bot.send_message(
+                    msg.chat.id, 
+                    msg_error_enter_language(&user_state.language)
+                ).await;
+        }
     };
-    userstate_wrapper.update_userstate(user_state);
-    bot.send_message(msg.chat.id, msg_language_set(user_state.language)).await
+    user_state_wrapper.update_userstate(user_state.clone());
+    bot.send_message(msg.chat.id, msg_language_set(&user_state.language)).await
 }
 
 #[cfg(test)]
@@ -168,17 +190,16 @@ mod tests {
 
     #[test]
     fn test_userstate_wrapper() {
-        let userstate_wrapper = UserStateWrapper::new();
-        let userstate = userstate_wrapper.find_userstate(ChatId(123456));
+        let user_state_wrapper = UserStateWrapper::new();
+        let userstate = user_state_wrapper.find_userstate(ChatId(123456));
         assert_eq!(userstate.language, Language::English);
 
         let user_state = UserState {
             chat_id: ChatId(654321),
             language: Language::German
         };
-        userstate_wrapper.update_userstate(user_state);
-        let userstate = userstate_wrapper.find_userstate(ChatId(654321));
+        user_state_wrapper.update_userstate(user_state);
+        let userstate = user_state_wrapper.find_userstate(ChatId(654321));
         assert_eq!(userstate.language, Language::German);
     }
 }
-
