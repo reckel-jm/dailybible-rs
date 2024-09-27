@@ -30,15 +30,15 @@ pub fn msg_biblereading(lang: &Language, biblereading: BibleReading) -> String {
 
 pub fn msg_biblereading_not_found(lang: &Language) -> String {
     match lang {
-        Language::English => format!("This is a reminder to read your bible!"),
-        Language::German => format!("Dies ist eine Erinnerung, auch heute in der Bibel zu lesen.")
+        Language::English => "This is a reminder to read your bible!".to_string(),
+        Language::German => "Dies ist eine Erinnerung, auch heute in der Bibel zu lesen.".to_string()
     }
 }
 
 pub fn msg_language_set(lang: &Language) -> String {
     match lang {
-        Language::English => format!("Language set to English."),
-        Language::German => format!("Die Sprache wurde auf Deutsch umgestellt.")
+        Language::English => "Language set to English.".to_string(),
+        Language::German => "Die Sprache wurde auf Deutsch umgestellt.".to_string()
     }
 }
 
@@ -59,8 +59,8 @@ pub fn msg_poll_text(lang: &Language) -> Vec<String> {
 
 pub fn msg_not_implemented_yet(lang: &Language) -> String {
     match lang {
-        Language::English => format!("This feature has not been implemented yet."),
-        Language::German => format!("Diese Funktion wurde noch nicht implementiert.")
+        Language::English => "This feature has not been implemented yet.".to_string(),
+        Language::German => "Diese Funktion wurde noch nicht implementiert.".to_string()
     }
 }
 

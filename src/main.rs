@@ -58,7 +58,7 @@ impl UserStateWrapper {
     /// The saved `UserState` if one is saved, or the default `UserState` if no one is found.
     pub fn find_userstate(&self, chat_id: ChatId) -> UserState {
         let default_user_state = UserState {
-                chat_id: chat_id,
+                chat_id,
                 language: Language::English,
         };
         
@@ -151,7 +151,7 @@ async fn send_daily_reminder(bot: Bot, msg: Message, user_state_wrapper: UserSta
     let question_strings = msg_poll_text(&userstate.language);
     bot.send_poll(
         msg.chat.id, 
-        question_strings.get(0).unwrap(), 
+        question_strings.first().unwrap(), 
         vec![
             question_strings.get(1).unwrap().clone(), 
             question_strings.get(2).unwrap().clone()

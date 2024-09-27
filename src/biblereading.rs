@@ -27,7 +27,7 @@ pub struct BibleReadingNotFoundError {
 impl BibleReadingNotFoundError {
     fn new(error_cause: ErrorCause) -> BibleReadingNotFoundError {
         BibleReadingNotFoundError {
-            error_cause: error_cause,
+            error_cause,
             error_string: String::from(""),
         }
     }
@@ -61,7 +61,7 @@ fn get_biblereading_for_date(search_date: NaiveDate) -> Result<BibleReading, Bib
                 if string_record.len() != 3 {
                     return Err(BibleReadingNotFoundError {
                         error_cause: ErrorCause::InvalidFormat,
-                        error_string: format!("The length of the row is not always 3")
+                        error_string: "The length of the row is not always 3".to_string()
                     });
                 }
 
