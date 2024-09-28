@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::{Arc,Mutex}};
+use std::{ops::Deref, rc, str::FromStr, sync::{Arc,Mutex}, thread, time};
 
 use chrono::NaiveTime;
 use localize::msg_biblereading_not_found;
@@ -124,18 +124,27 @@ async fn main() {
                 .endpoint(answer)
             );
 
+    
+    let bot_arc = Arc::new(bot.clone());
+    let user_state_wrapper_arc = Arc::new(user_state_wrapper);
+
+    let bot_arc_thread = bot_arc.clone();
+    let user_state_wrapper_arc_thread = user_state_wrapper_arc.clone();
+    thread::spawn(move || run_timer_thread_loop(&bot_arc_thread.clone(), &user_state_wrapper_arc_thread.clone()));
+
+
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![user_state_wrapper])
+        .dependencies(dptree::deps![user_state_wrapper_arc.clone()])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
 }   
 
-async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: UserStateWrapper) -> ResponseResult<()> {
+async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: Arc<UserStateWrapper>) -> ResponseResult<()> {
     match cmd {
         Command::Help => bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?,
-        Command::SendDailyReminder => send_daily_reminder(bot, msg, user_state_wrapper).await?,
+        Command::SendDailyReminder => send_daily_reminder(bot, msg.chat.id, user_state_wrapper).await?,
         Command::Start => bot.send_message(msg.chat.id, "This bot helps you to read your Bible daily. Type /help for more information").await?,
         Command::SetTimer { timer_string } => bot_set_timer(bot, msg, user_state_wrapper, timer_string).await?,
         Command::UserInformation => send_user_information(bot, msg, user_state_wrapper).await?,
@@ -144,13 +153,13 @@ async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: UserSt
     Ok(())
 }
 
-async fn send_daily_reminder(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper) -> Result<Message, RequestError> {
-    let userstate = user_state_wrapper.find_userstate(msg.chat.id);
+async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
+    let userstate = user_state_wrapper.find_userstate(chat_id);
 
     match biblereading::get_todays_biblereading() {
         Ok(todays_biblereading) => {
             let _ = bot.send_message(
-                msg.chat.id,
+                chat_id,
                 msg_biblereading(&userstate.language, todays_biblereading)
             )
             .parse_mode(teloxide::types::ParseMode::MarkdownV2)
@@ -160,7 +169,7 @@ async fn send_daily_reminder(bot: Bot, msg: Message, user_state_wrapper: UserSta
             log::error!("{}", error.to_string());
 
             let _ = bot.send_message(
-                msg.chat.id,
+                chat_id,
                 msg_biblereading_not_found(&userstate.language)
             ).await;
         }
@@ -168,7 +177,7 @@ async fn send_daily_reminder(bot: Bot, msg: Message, user_state_wrapper: UserSta
 
     let question_strings = msg_poll_text(&userstate.language);
     bot.send_poll(
-        msg.chat.id, 
+        chat_id, 
         question_strings.first().unwrap(), 
         vec![
             question_strings.get(1).unwrap().clone(), 
@@ -232,6 +241,25 @@ async fn send_user_information(bot: Bot, msg: Message, user_state_wrapper: UserS
         .parse_mode(MarkdownV2).await
     } else {
         bot.send_message(msg.chat.id, "There is currently no data saved on the server concerning you.").await
+    }
+}
+
+fn run_timer_thread_loop(bot_arc: &Arc<Bot>, user_state_wrapper_arc: &Arc<UserStateWrapper>) {
+    let mut last_run: Option<NaiveTime> = None;
+
+    loop {
+        let now = chrono::offset::Local::now().naive_local().time();
+
+        if last_run.is_none() || last_run.unwrap() != now {
+            let unlocked_user_state_wrapper = user_state_wrapper_arc.clone();
+            for u in unlocked_user_state_wrapper.user_states.clone().lock().unwrap().iter() {
+                if u.timer.is_some() && u.timer.unwrap() == now {
+                    send_daily_reminder(bot_arc.as_ref().clone(), u.chat_id, unlocked_user_state_wrapper.as_ref().clone());
+                }
+            }
+        }
+        last_run = Some(now);
+        thread::sleep(time::Duration::from_secs(30));
     }
 }
 
