@@ -1,8 +1,9 @@
-use std::sync::{Arc,Mutex};
+use std::{str::FromStr, sync::{Arc,Mutex}};
 
+use chrono::NaiveTime;
 use localize::msg_biblereading_not_found;
 use serde::{ Serialize, Deserialize };
-use teloxide::{ prelude::*, utils::command::BotCommands, RequestError };
+use teloxide::{ prelude::*, utils::command::BotCommands, RequestError, types::ParseMode::* };
 
 mod biblereading;
 
@@ -16,8 +17,8 @@ enum Command {
     Start,
     #[command(description="Send the daily reminder with the verses once")]
     SendDailyReminder,
-    #[command(description="Setup a Timer")]
-    SetupTimer,
+    #[command(description="Setup a daily timer for a given time (hh:mm)", parse_with="split")]
+    SetTimer { timer_string: String },
     #[command(description="Show help message")]
     Help,
     #[command(description="Send user/chat information (for debugging purposes)")]
@@ -30,6 +31,7 @@ enum Command {
 struct UserState {
     pub chat_id: ChatId,
     pub language: localize::Language,
+    pub timer: Option<chrono::NaiveTime>,
 }
 
 type UserStateVector = Arc<Mutex<Vec<UserState>>>;
@@ -49,6 +51,15 @@ impl UserStateWrapper {
         }
     }
 
+    pub fn user_state_exists(&self, chat_id: ChatId) -> bool {
+        for u in self.user_states.clone().lock().unwrap().iter() {
+            if u.chat_id == chat_id {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Returns a `UserState` by a given `ChatId`. This function is save, that means, if no UserSate for a
     /// given ChatId is saved, the default UserState will be returned.
     /// 
@@ -60,6 +71,7 @@ impl UserStateWrapper {
         let default_user_state = UserState {
                 chat_id,
                 language: Language::English,
+                timer: None,
         };
         
         let user_state_reference = self.user_states.lock().unwrap();
@@ -71,6 +83,12 @@ impl UserStateWrapper {
         default_user_state
     }
 
+    /// This updates a UserState internally and overrides an existing one if the ChatId does already exist
+    /// # Params
+    /// - `user_state`: The UserState which should be updated.
+    /// # Returns
+    /// A bool, `true` if the given ChatId had already a UserStage which have been updated.
+    /// `false` if a UserState with the given ChatId has been saved for the first time.
     pub fn update_userstate(&self, user_state: UserState) -> bool {
         let mut user_state_reference = self.user_states.lock().unwrap();
 
@@ -119,8 +137,8 @@ async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: UserSt
         Command::Help => bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?,
         Command::SendDailyReminder => send_daily_reminder(bot, msg, user_state_wrapper).await?,
         Command::Start => bot.send_message(msg.chat.id, "This bot helps you to read your Bible daily. Type /help for more information").await?,
-        Command::SetupTimer => send_not_implemented(bot, msg, user_state_wrapper).await?,
-        Command::UserInformation => bot.send_message(msg.chat.id, msg.chat.id.to_string()).await?,
+        Command::SetTimer { timer_string } => bot_set_timer(bot, msg, user_state_wrapper, timer_string).await?,
+        Command::UserInformation => send_user_information(bot, msg, user_state_wrapper).await?,
         Command::SetLang { lang_string } => set_language(bot, msg, user_state_wrapper, lang_string).await?,
     };  
     Ok(())
@@ -184,6 +202,39 @@ async fn set_language(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapp
     bot.send_message(msg.chat.id, msg_language_set(&user_state.language)).await
 }
 
+async fn bot_set_timer(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper, timer_string: String) -> Result<Message, RequestError> {
+    let mut user_state = user_state_wrapper.find_userstate(msg.chat.id);
+
+    match chrono::NaiveTime::parse_from_str(&timer_string, "%H:%M") {
+        Ok(time) => { 
+            user_state.timer = Some(time);
+            user_state_wrapper.update_userstate(user_state.clone());
+            bot.send_message(msg.chat.id, msg_timer_updated(&user_state.language, &time)).await
+        }
+        Err(_) => {
+            bot.send_message(msg.chat.id, msg_error_timer_update(&user_state.language)).await
+        }
+    }
+}
+
+async fn send_user_information(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper) -> Result<Message, RequestError> {
+    if user_state_wrapper.user_state_exists(msg.chat.id) {
+        bot.send_message(
+                msg.chat.id, 
+                format!("The following data about you is saved on the server: \n\
+                \n\
+                ```\
+                {}\
+                ```\
+                ", serde_json::to_string_pretty(&user_state_wrapper.find_userstate(msg.chat.id)).unwrap()
+            )
+        )
+        .parse_mode(MarkdownV2).await
+    } else {
+        bot.send_message(msg.chat.id, "There is currently no data saved on the server concerning you.").await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,7 +247,8 @@ mod tests {
 
         let user_state = UserState {
             chat_id: ChatId(654321),
-            language: Language::German
+            language: Language::German,
+            timer: None
         };
         user_state_wrapper.update_userstate(user_state);
         let userstate = user_state_wrapper.find_userstate(ChatId(654321));

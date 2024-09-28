@@ -1,3 +1,4 @@
+use chrono::NaiveTime;
 use serde::{Deserialize, Serialize};
 
 use crate::biblereading::BibleReading;
@@ -68,5 +69,19 @@ pub fn msg_error_enter_language(lang: &Language) -> String {
     match lang {
         Language::English => String::from("You need to specify a language, use either /setlang en or /setlang de"),
         Language::German => String::from("Du musst eine Sprache angeben, entweder /setlang de oder /setlang en")
+    }
+}
+
+pub fn msg_timer_updated(lang: &Language, time: &NaiveTime) -> String {
+    match lang {
+        Language::English => format!("The daily timer has been updated to {}.", time.to_string()),
+        Language::German => format!("Die tägliche Erinnerung wurde auf {} gesetzt.", time.to_string())
+    }
+}
+
+pub fn msg_error_timer_update(lang: &Language) -> String {
+    match lang {
+        Language::English => String::from("The format was not valid. Please use the function with a valid time (for example /settimer 08:00)."),
+        Language::German => String::from("Ungültiges Format. Bitte benutze die Funktion mit einer gültigen Zeitangabe, zum Beispiel /settimer 08:00.")
     }
 }

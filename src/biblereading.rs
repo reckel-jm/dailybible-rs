@@ -102,7 +102,6 @@ fn get_biblereading_for_date(search_date: NaiveDate) -> Result<BibleReading, Bib
 
 #[cfg(test)]
 mod tests {
-    
 
     use super::*;
 
