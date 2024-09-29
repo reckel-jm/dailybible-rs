@@ -1,9 +1,12 @@
-use std::{ops::Deref, rc, str::FromStr, sync::{Arc,Mutex}, thread, time};
+use std::{future::{poll_fn, IntoFuture}, ops::Deref, rc, str::FromStr, sync::Arc, thread, time};
 
-use chrono::NaiveTime;
+use chrono::{NaiveTime, Timelike};
 use localize::msg_biblereading_not_found;
+use log::logger;
 use serde::{ Serialize, Deserialize };
-use teloxide::{ prelude::*, utils::command::BotCommands, RequestError, types::ParseMode::* };
+use teloxide::{ dispatching::ShutdownToken, prelude::*, types::ParseMode::*, utils::command::BotCommands, RequestError };
+use tokio::{signal, sync::Mutex};
+use tokio_util::sync::CancellationToken; 
 
 mod biblereading;
 
@@ -38,7 +41,7 @@ type UserStateVector = Arc<Mutex<Vec<UserState>>>;
 
 /// The UserStateWrapper handles the managing of user state and can be savely used by the commands to read
 /// or write user states.
-/// Define any needed userstate in the UserState struct.
+/// Define any needed user state in the UserState struct.
 #[derive(Clone)]
 struct UserStateWrapper {
     user_states: UserStateVector,
@@ -51,8 +54,8 @@ impl UserStateWrapper {
         }
     }
 
-    pub fn user_state_exists(&self, chat_id: ChatId) -> bool {
-        for u in self.user_states.clone().lock().unwrap().iter() {
+    pub async fn user_state_exists(&self, chat_id: ChatId) -> bool {
+        for u in self.user_states.clone().lock().await.iter() {
             if u.chat_id == chat_id {
                 return true;
             }
@@ -67,14 +70,14 @@ impl UserStateWrapper {
     /// - `chat_id` A `ChatId`
     /// # Returns
     /// The saved `UserState` if one is saved, or the default `UserState` if no one is found.
-    pub fn find_userstate(&self, chat_id: ChatId) -> UserState {
+    pub async fn find_userstate(&self, chat_id: ChatId) -> UserState {
         let default_user_state = UserState {
                 chat_id,
                 language: Language::English,
                 timer: None,
         };
         
-        let user_state_reference = self.user_states.lock().unwrap();
+        let user_state_reference = self.user_states.lock().await;
         for u in user_state_reference.iter() {
             if u.chat_id == chat_id {
                 return u.clone();
@@ -89,8 +92,8 @@ impl UserStateWrapper {
     /// # Returns
     /// A bool, `true` if the given ChatId had already a UserStage which have been updated.
     /// `false` if a UserState with the given ChatId has been saved for the first time.
-    pub fn update_userstate(&self, user_state: UserState) -> bool {
-        let mut user_state_reference = self.user_states.lock().unwrap();
+    pub async fn update_userstate(&self, user_state: UserState) -> bool {
+        let mut user_state_reference = self.user_states.lock().await;
 
         for u in user_state_reference.iter_mut() {
             if u.chat_id == user_state.chat_id {
@@ -130,8 +133,8 @@ async fn main() {
 
     let bot_arc_thread = bot_arc.clone();
     let user_state_wrapper_arc_thread = user_state_wrapper_arc.clone();
-    thread::spawn(move || run_timer_thread_loop(&bot_arc_thread.clone(), &user_state_wrapper_arc_thread.clone()));
 
+    tokio::spawn(async move { run_timer_thread_loop(bot_arc_thread.clone(), user_state_wrapper_arc_thread.clone()).await } );
 
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![user_state_wrapper_arc.clone()])
@@ -139,22 +142,23 @@ async fn main() {
         .build()
         .dispatch()
         .await;
+
 }   
 
 async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: Arc<UserStateWrapper>) -> ResponseResult<()> {
     match cmd {
         Command::Help => bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?,
-        Command::SendDailyReminder => send_daily_reminder(bot, msg.chat.id, user_state_wrapper).await?,
+        Command::SendDailyReminder => send_daily_reminder(bot, msg.chat.id, user_state_wrapper.clone()).await?,
         Command::Start => bot.send_message(msg.chat.id, "This bot helps you to read your Bible daily. Type /help for more information").await?,
-        Command::SetTimer { timer_string } => bot_set_timer(bot, msg, user_state_wrapper, timer_string).await?,
-        Command::UserInformation => send_user_information(bot, msg, user_state_wrapper).await?,
-        Command::SetLang { lang_string } => set_language(bot, msg, user_state_wrapper, lang_string).await?,
+        Command::SetTimer { timer_string } => bot_set_timer(bot, msg, user_state_wrapper.clone(), timer_string).await?,
+        Command::UserInformation => send_user_information(bot, msg, user_state_wrapper.clone()).await?,
+        Command::SetLang { lang_string } => set_language(bot, msg, user_state_wrapper.clone(), lang_string).await?,
     };  
     Ok(())
 }
 
 async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
-    let userstate = user_state_wrapper.find_userstate(chat_id);
+    let userstate = user_state_wrapper.find_userstate(chat_id).await;
 
     match biblereading::get_todays_biblereading() {
         Ok(todays_biblereading) => {
@@ -188,15 +192,15 @@ async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper: Arc<
     .await
 }       
 
-async fn send_not_implemented(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper) -> Result<Message, RequestError> {
-    let language: Language = user_state_wrapper.find_userstate(msg.chat.id).language;
+async fn send_not_implemented(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
+    let language: Language = user_state_wrapper.find_userstate(msg.chat.id).await.language;
     
     log::warn!("User {} called something which has not been implemented yet.", msg.chat.username().unwrap_or("unknown"));
     bot.send_message(msg.chat.id, msg_not_implemented_yet(&language)).await
 }
 
-async fn set_language(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper, lang_str: String) -> Result<Message, RequestError> {
-    let mut user_state = user_state_wrapper.find_userstate(msg.chat.id);
+async fn set_language(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>, lang_str: String) -> Result<Message, RequestError> {
+    let mut user_state = user_state_wrapper.find_userstate(msg.chat.id).await;
     match lang_str.to_lowercase().as_str() {
         "de" => { user_state.language = Language::German; },
         "en" => { user_state.language = Language::English; },
@@ -207,17 +211,17 @@ async fn set_language(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapp
                 ).await;
         }
     };
-    user_state_wrapper.update_userstate(user_state.clone());
+    user_state_wrapper.update_userstate(user_state.clone()).await;
     bot.send_message(msg.chat.id, msg_language_set(&user_state.language)).await
 }
 
-async fn bot_set_timer(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper, timer_string: String) -> Result<Message, RequestError> {
-    let mut user_state = user_state_wrapper.find_userstate(msg.chat.id);
+async fn bot_set_timer(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>, timer_string: String) -> Result<Message, RequestError> {
+    let mut user_state = user_state_wrapper.find_userstate(msg.chat.id).await;
 
     match chrono::NaiveTime::parse_from_str(&timer_string, "%H:%M") {
         Ok(time) => { 
             user_state.timer = Some(time);
-            user_state_wrapper.update_userstate(user_state.clone());
+            user_state_wrapper.update_userstate(user_state.clone()).await;
             bot.send_message(msg.chat.id, msg_timer_updated(&user_state.language, &time)).await
         }
         Err(_) => {
@@ -226,8 +230,8 @@ async fn bot_set_timer(bot: Bot, msg: Message, user_state_wrapper: UserStateWrap
     }
 }
 
-async fn send_user_information(bot: Bot, msg: Message, user_state_wrapper: UserStateWrapper) -> Result<Message, RequestError> {
-    if user_state_wrapper.user_state_exists(msg.chat.id) {
+async fn send_user_information(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
+    if user_state_wrapper.user_state_exists(msg.chat.id).await {
         bot.send_message(
                 msg.chat.id, 
                 format!("The following data about you is saved on the server: \n\
@@ -235,7 +239,7 @@ async fn send_user_information(bot: Bot, msg: Message, user_state_wrapper: UserS
                 ```\
                 {}\
                 ```\
-                ", serde_json::to_string_pretty(&user_state_wrapper.find_userstate(msg.chat.id)).unwrap()
+                ", serde_json::to_string_pretty(&user_state_wrapper.find_userstate(msg.chat.id).await).unwrap()
             )
         )
         .parse_mode(MarkdownV2).await
@@ -244,22 +248,51 @@ async fn send_user_information(bot: Bot, msg: Message, user_state_wrapper: UserS
     }
 }
 
-fn run_timer_thread_loop(bot_arc: &Arc<Bot>, user_state_wrapper_arc: &Arc<UserStateWrapper>) {
+async fn run_timer_thread_loop(bot_arc: Arc<Bot>, user_state_wrapper_arc: Arc<UserStateWrapper>) {
     let mut last_run: Option<NaiveTime> = None;
-
-    loop {
+    log::info!("Start Timer thread");
+    
+    let control_c_pressed = tokio::spawn(
+        async {
+            let _ = signal::ctrl_c().await;
+            log::info!("Shutdown the timer");
+        }
+    );
+    log::info!("Start the Loop");
+    while !control_c_pressed.is_finished() {
         let now = chrono::offset::Local::now().naive_local().time();
+        log::info!(
+            "Start timer for {}", now.to_string()
+        );
 
-        if last_run.is_none() || last_run.unwrap() != now {
+        // We make sure that the real timer task is only runned once per minute.
+        if last_run.is_none() || last_run.unwrap().hour() != now.hour() || last_run.unwrap().minute() != now.minute() {
             let unlocked_user_state_wrapper = user_state_wrapper_arc.clone();
-            for u in unlocked_user_state_wrapper.user_states.clone().lock().unwrap().iter() {
-                if u.timer.is_some() && u.timer.unwrap() == now {
-                    send_daily_reminder(bot_arc.as_ref().clone(), u.chat_id, unlocked_user_state_wrapper.as_ref().clone());
-                }
+            dbg!(unlocked_user_state_wrapper.user_states.clone());
+            
+            for u in unlocked_user_state_wrapper.user_states.clone().lock().await.iter() {
+                dbg!(u);
+                if u.timer.is_some() && u.timer.unwrap().hour() == now.hour() && u.timer.unwrap().minute() == now.minute() {
+                    log::info!("Send Reminder");
+
+                    // We have to clone all the variables which are needed for the `send_daily-reminder`-function because they will be consumed 
+                    // by the spawned task.
+                    let bot_arc_clone = bot_arc.clone();
+                    let user_state_wrapper_arc_clone = user_state_wrapper_arc.clone();
+                    let u_clone = u.clone();
+                    tokio::spawn(
+                        async move { 
+                            match send_daily_reminder(bot_arc_clone.deref().clone(), u_clone.chat_id, user_state_wrapper_arc_clone).await {
+                                Ok(_) => log::info!("Sending completed"),
+                                Err(_) => log::info!("There was an error"),
+                            } 
+                        } 
+                    );
+                }   
             }
         }
         last_run = Some(now);
-        thread::sleep(time::Duration::from_secs(30));
+        tokio::time::sleep(time::Duration::from_secs(5)).await;
     }
 }
 
@@ -267,19 +300,19 @@ fn run_timer_thread_loop(bot_arc: &Arc<Bot>, user_state_wrapper_arc: &Arc<UserSt
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_userstate_wrapper() {
+    #[tokio::test]
+    async fn test_userstate_wrapper() {
         let user_state_wrapper = UserStateWrapper::new();
         let userstate = user_state_wrapper.find_userstate(ChatId(123456));
-        assert_eq!(userstate.language, Language::English);
+        assert_eq!(userstate.await.language, Language::English);
 
         let user_state = UserState {
             chat_id: ChatId(654321),
             language: Language::German,
             timer: None
         };
-        user_state_wrapper.update_userstate(user_state);
+        user_state_wrapper.update_userstate(user_state).await;
         let userstate = user_state_wrapper.find_userstate(ChatId(654321));
-        assert_eq!(userstate.language, Language::German);
+        assert_eq!(userstate.await.language, Language::German);
     }
 }
