@@ -1,17 +1,15 @@
-use std::{future::{poll_fn, IntoFuture}, ops::Deref, rc, str::FromStr, sync::Arc, thread, time};
+use std::{ops::Deref, sync::Arc, time};
 
 use chrono::{NaiveTime, Timelike};
 use localize::msg_biblereading_not_found;
-use log::logger;
-use serde::{ Serialize, Deserialize };
-use teloxide::{ dispatching::ShutdownToken, prelude::*, types::ParseMode::*, utils::command::BotCommands, RequestError };
-use tokio::{signal, sync::Mutex};
-use tokio_util::sync::CancellationToken; 
+use teloxide::{ prelude::*, types::ParseMode::*, utils::command::BotCommands, RequestError };
+use tokio::signal;
 
 mod biblereading;
-
+mod userstate;
 mod localize;
 use crate::localize::*;
+use crate::userstate::*;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -30,82 +28,7 @@ enum Command {
     SetLang { lang_string: String }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct UserState {
-    pub chat_id: ChatId,
-    pub language: localize::Language,
-    pub timer: Option<chrono::NaiveTime>,
-}
 
-type UserStateVector = Arc<Mutex<Vec<UserState>>>;
-
-/// The UserStateWrapper handles the managing of user state and can be savely used by the commands to read
-/// or write user states.
-/// Define any needed user state in the UserState struct.
-#[derive(Clone)]
-struct UserStateWrapper {
-    user_states: UserStateVector,
-}
-
-impl UserStateWrapper {
-    pub fn new() -> Self {
-        UserStateWrapper {
-            user_states: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    pub async fn user_state_exists(&self, chat_id: ChatId) -> bool {
-        for u in self.user_states.clone().lock().await.iter() {
-            if u.chat_id == chat_id {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Returns a `UserState` by a given `ChatId`. This function is save, that means, if no UserSate for a
-    /// given ChatId is saved, the default UserState will be returned.
-    /// 
-    /// # Params
-    /// - `chat_id` A `ChatId`
-    /// # Returns
-    /// The saved `UserState` if one is saved, or the default `UserState` if no one is found.
-    pub async fn find_userstate(&self, chat_id: ChatId) -> UserState {
-        let default_user_state = UserState {
-                chat_id,
-                language: Language::English,
-                timer: None,
-        };
-        
-        let user_state_reference = self.user_states.lock().await;
-        for u in user_state_reference.iter() {
-            if u.chat_id == chat_id {
-                return u.clone();
-            }
-        }
-        default_user_state
-    }
-
-    /// This updates a UserState internally and overrides an existing one if the ChatId does already exist
-    /// # Params
-    /// - `user_state`: The UserState which should be updated.
-    /// # Returns
-    /// A bool, `true` if the given ChatId had already a UserStage which have been updated.
-    /// `false` if a UserState with the given ChatId has been saved for the first time.
-    pub async fn update_userstate(&self, user_state: UserState) -> bool {
-        let mut user_state_reference = self.user_states.lock().await;
-
-        for u in user_state_reference.iter_mut() {
-            if u.chat_id == user_state.chat_id {
-                *u = user_state.clone();
-                return true;
-            }
-        };
-
-        user_state_reference.push(user_state);
-        false
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -293,26 +216,5 @@ async fn run_timer_thread_loop(bot_arc: Arc<Bot>, user_state_wrapper_arc: Arc<Us
         }
         last_run = Some(now);
         tokio::time::sleep(time::Duration::from_secs(5)).await;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_userstate_wrapper() {
-        let user_state_wrapper = UserStateWrapper::new();
-        let userstate = user_state_wrapper.find_userstate(ChatId(123456));
-        assert_eq!(userstate.await.language, Language::English);
-
-        let user_state = UserState {
-            chat_id: ChatId(654321),
-            language: Language::German,
-            timer: None
-        };
-        user_state_wrapper.update_userstate(user_state).await;
-        let userstate = user_state_wrapper.find_userstate(ChatId(654321));
-        assert_eq!(userstate.await.language, Language::German);
     }
 }
