@@ -12,6 +12,15 @@ use crate::localize::*;
 use crate::userstate::*;
 
 
+
+/// The default file path for the file where the user states will be saved
+const DEFAULT_USER_STATE_FILE_PATH: &str = "userstates.csv";
+
+/// The name of the environment variable where the path of the user_state_file_path can be specified
+const USER_STATE_ENV: &str = "TELOXIDE_USERSTATEFILE";
+
+
+/// This enum contains all the commands which are available
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
 enum Command {
@@ -29,8 +38,7 @@ enum Command {
     SetLang { lang_string: String }
 }
 
-const DEFAULT_USER_STATE_FILE_PATH: &str = "userstates.csv";
-const USER_STATE_ENV: &str = "TELOXIDE_USERSTATEFILE";
+
 
 #[tokio::main]
 async fn main() {
@@ -81,6 +89,19 @@ async fn main() {
 
 
 
+/// This function handles the answers which the bot can give depending on the command issued by the user.
+/// It is automatically called by the dispatcher.
+/// 
+/// # Arguments
+/// - bot: The telegram bot (it can be cloned)
+/// - cmd: The Command which has been issued
+/// - user_state_wrapper: An Arc of the UserStateWrapper
+/// 
+/// # Return
+/// A ResponseResult (just await this function)
+/// 
+/// # Note
+/// The Arc of the UserStateWrapper should be cloned every time passing it to a function to make sure that always enough references of that live.
 async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: Arc<UserStateWrapper>) -> ResponseResult<()> {
     match cmd {
         Command::Help => bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?,
@@ -94,8 +115,20 @@ async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: Arc<Us
 }
 
 
-async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
-    let userstate = user_state_wrapper.find_userstate(chat_id).await;
+/// This function is used to send the daily reminder to the user
+/// 
+/// # Arguments
+/// - bot: The telegram bot (it can be cloned)
+/// - chat_id: the ChatId of the user (where to send the message to)
+/// - user_state_wrapper_arc: An Arc of the UserStateWrapper
+/// 
+/// # Return
+/// A ResponseResult (just await this function)
+/// 
+/// # Note
+/// The Arc of the UserStateWrapper should be cloned every time passing it to a function to make sure that always enough references of that live.
+async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper_arc: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
+    let userstate = user_state_wrapper_arc.find_userstate(chat_id).await;
 
     match biblereading::get_todays_biblereading() {
         Ok(todays_biblereading) => {
