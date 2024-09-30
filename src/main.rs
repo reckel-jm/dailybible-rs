@@ -65,8 +65,10 @@ async fn main() {
 
     let bot_arc_thread = bot_arc.clone();
     let user_state_wrapper_arc_thread = user_state_wrapper_arc.clone();
-
     tokio::spawn(async move { run_timer_thread_loop(bot_arc_thread.clone(), user_state_wrapper_arc_thread.clone()).await } );
+
+    let user_state_wrapper_arc_thread = user_state_wrapper_arc.clone();
+    tokio::spawn(async move { run_save_userstate_loop(user_state_wrapper_arc_thread.clone()).await } );
 
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![user_state_wrapper_arc.clone()])
@@ -208,10 +210,8 @@ async fn run_timer_thread_loop(bot_arc: Arc<Bot>, user_state_wrapper_arc: Arc<Us
         // We make sure that the real timer task is only runned once per minute.
         if last_run.is_none() || last_run.unwrap().hour() != now.hour() || last_run.unwrap().minute() != now.minute() {
             let unlocked_user_state_wrapper = user_state_wrapper_arc.clone();
-            dbg!(unlocked_user_state_wrapper.user_states.clone());
             
             for u in unlocked_user_state_wrapper.user_states.clone().lock().await.clone().iter() {
-                dbg!(u);
                 if u.timer.is_some() && u.timer.unwrap().hour() == now.hour() && u.timer.unwrap().minute() == now.minute() {
                     log::info!("Send Reminder");
 
@@ -240,18 +240,31 @@ async fn run_save_userstate_loop(user_state_wrapper_arc: Arc<UserStateWrapper>) 
     let control_c_pressed = tokio::spawn(
         async {
             let _ = signal::ctrl_c().await;
-            log::info!("Shutdown the timer");
+            log::info!("Shutdown the user state saver timer");
         }
     );
 
-    while !control_c_pressed.is_finished() {
-        let user_state_file = env::var(USER_STATE_ENV).unwrap_or(DEFAULT_USER_STATE_FILE_PATH.to_string());
+    loop {
+        let cloned_user_state_wrapper_arc = user_state_wrapper_arc.clone();
+        tokio::spawn(
+            async move {
+                handle_save_current_userstates(cloned_user_state_wrapper_arc).await;
+            }
+        );
 
-        match user_state_wrapper_arc.write_states_to_file(&user_state_file).await {
-            Ok(_) => log::info!("Saved user states to {}", user_state_file),
-            Err(error) => log::warn!("Could not save user state file: {}", error.to_string())
+        tokio::time::sleep(time::Duration::from_secs(30)).await;
+        if control_c_pressed.is_finished() {
+            handle_save_current_userstates(user_state_wrapper_arc.clone()).await;               
+            break;
         }
+    }
+}
 
-        tokio::time::sleep(time::Duration::from_secs(300)).await;
+async fn handle_save_current_userstates(user_state_wrapper_arc: Arc<UserStateWrapper>) {
+    let user_state_file = env::var(USER_STATE_ENV).unwrap_or(DEFAULT_USER_STATE_FILE_PATH.to_string());
+
+    match user_state_wrapper_arc.write_states_to_file(&user_state_file).await {
+        Ok(_) => log::info!("Saved user states to {}", user_state_file),
+        Err(error) => log::warn!("Could not save user state file: {}", error.to_string())
     }
 }
