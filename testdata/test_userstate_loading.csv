@@ -1,0 +1,12 @@
+[
+  {
+    "chat_id": 654321,
+    "language": "German",
+    "timer": null
+  },
+  {
+    "chat_id": 654322,
+    "language": "English",
+    "timer": null
+  }
+]

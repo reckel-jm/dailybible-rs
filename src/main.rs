@@ -1,4 +1,4 @@
-use std::{ops::Deref, sync::Arc, time};
+use std::{ops::Deref, sync::Arc, time, env};
 
 use chrono::{NaiveTime, Timelike};
 use localize::msg_biblereading_not_found;
@@ -10,6 +10,7 @@ mod userstate;
 mod localize;
 use crate::localize::*;
 use crate::userstate::*;
+
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -28,7 +29,8 @@ enum Command {
     SetLang { lang_string: String }
 }
 
-
+const DEFAULT_USER_STATE_FILE_PATH: &str = "userstates.csv";
+const USER_STATE_ENV: &str = "TELOXIDE_USERSTATEFILE";
 
 #[tokio::main]
 async fn main() {
@@ -36,6 +38,13 @@ async fn main() {
     log::info!("Starting DailyBible Bot...");
 
     let user_state_wrapper: UserStateWrapper = UserStateWrapper::new();
+
+    // Check whether we can load the latest user_states from a file
+    let user_state_file = env::var(USER_STATE_ENV).unwrap_or(DEFAULT_USER_STATE_FILE_PATH.to_string());
+    match user_state_wrapper.load_states_from_file(&user_state_file).await {
+        Ok(_) => log::info!("Previous user states successfully loaded."),
+        Err(error) => log::warn!("Could not load previous user states: {}", error.to_string()),
+    }
 
     let bot: Bot = Bot::from_env();
 
@@ -68,6 +77,8 @@ async fn main() {
 
 }   
 
+
+
 async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: Arc<UserStateWrapper>) -> ResponseResult<()> {
     match cmd {
         Command::Help => bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?,
@@ -79,6 +90,7 @@ async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: Arc<Us
     };  
     Ok(())
 }
+
 
 async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
     let userstate = user_state_wrapper.find_userstate(chat_id).await;
@@ -115,12 +127,14 @@ async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper: Arc<
     .await
 }       
 
+
 async fn send_not_implemented(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
     let language: Language = user_state_wrapper.find_userstate(msg.chat.id).await.language;
     
     log::warn!("User {} called something which has not been implemented yet.", msg.chat.username().unwrap_or("unknown"));
     bot.send_message(msg.chat.id, msg_not_implemented_yet(&language)).await
 }
+
 
 async fn set_language(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>, lang_str: String) -> Result<Message, RequestError> {
     let mut user_state = user_state_wrapper.find_userstate(msg.chat.id).await;
@@ -138,6 +152,7 @@ async fn set_language(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateW
     bot.send_message(msg.chat.id, msg_language_set(&user_state.language)).await
 }
 
+
 async fn bot_set_timer(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>, timer_string: String) -> Result<Message, RequestError> {
     let mut user_state = user_state_wrapper.find_userstate(msg.chat.id).await;
 
@@ -152,6 +167,7 @@ async fn bot_set_timer(bot: Bot, msg: Message, user_state_wrapper: Arc<UserState
         }
     }
 }
+
 
 async fn send_user_information(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
     if user_state_wrapper.user_state_exists(msg.chat.id).await {
@@ -170,6 +186,7 @@ async fn send_user_information(bot: Bot, msg: Message, user_state_wrapper: Arc<U
         bot.send_message(msg.chat.id, "There is currently no data saved on the server concerning you.").await
     }
 }
+
 
 async fn run_timer_thread_loop(bot_arc: Arc<Bot>, user_state_wrapper_arc: Arc<UserStateWrapper>) {
     let mut last_run: Option<NaiveTime> = None;
@@ -193,7 +210,7 @@ async fn run_timer_thread_loop(bot_arc: Arc<Bot>, user_state_wrapper_arc: Arc<Us
             let unlocked_user_state_wrapper = user_state_wrapper_arc.clone();
             dbg!(unlocked_user_state_wrapper.user_states.clone());
             
-            for u in unlocked_user_state_wrapper.user_states.clone().lock().await.iter() {
+            for u in unlocked_user_state_wrapper.user_states.clone().lock().await.clone().iter() {
                 dbg!(u);
                 if u.timer.is_some() && u.timer.unwrap().hour() == now.hour() && u.timer.unwrap().minute() == now.minute() {
                     log::info!("Send Reminder");
@@ -216,5 +233,25 @@ async fn run_timer_thread_loop(bot_arc: Arc<Bot>, user_state_wrapper_arc: Arc<Us
         }
         last_run = Some(now);
         tokio::time::sleep(time::Duration::from_secs(5)).await;
+    }
+}
+
+async fn run_save_userstate_loop(user_state_wrapper_arc: Arc<UserStateWrapper>) {
+    let control_c_pressed = tokio::spawn(
+        async {
+            let _ = signal::ctrl_c().await;
+            log::info!("Shutdown the timer");
+        }
+    );
+
+    while !control_c_pressed.is_finished() {
+        let user_state_file = env::var(USER_STATE_ENV).unwrap_or(DEFAULT_USER_STATE_FILE_PATH.to_string());
+
+        match user_state_wrapper_arc.write_states_to_file(&user_state_file).await {
+            Ok(_) => log::info!("Saved user states to {}", user_state_file),
+            Err(error) => log::warn!("Could not save user state file: {}", error.to_string())
+        }
+
+        tokio::time::sleep(time::Duration::from_secs(300)).await;
     }
 }
