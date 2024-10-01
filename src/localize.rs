@@ -58,6 +58,7 @@ pub fn msg_poll_text(lang: &Language) -> Vec<String> {
     }
 }
 
+#[allow(dead_code)]
 pub fn msg_not_implemented_yet(lang: &Language) -> String {
     match lang {
         Language::English => "This feature has not been implemented yet.".to_string(),

@@ -14,7 +14,7 @@ use crate::userstate::*;
 
 
 /// The default file path for the file where the user states will be saved
-const DEFAULT_USER_STATE_FILE_PATH: &str = "userstates.csv";
+const DEFAULT_USER_STATE_FILE_PATH: &str = "userstates.json";
 
 /// The name of the environment variable where the path of the user_state_file_path can be specified
 const USER_STATE_ENV: &str = "TELOXIDE_USERSTATEFILE";
@@ -163,6 +163,7 @@ async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper_arc: 
 }       
 
 
+#[allow(dead_code)]
 async fn send_not_implemented(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
     let language: Language = user_state_wrapper.find_userstate(msg.chat.id).await.language;
     
@@ -244,7 +245,7 @@ async fn run_timer_thread_loop(bot_arc: Arc<Bot>, user_state_wrapper_arc: Arc<Us
         if last_run.is_none() || last_run.unwrap().hour() != now.hour() || last_run.unwrap().minute() != now.minute() {
             let unlocked_user_state_wrapper = user_state_wrapper_arc.clone();
             
-            for u in unlocked_user_state_wrapper.user_states.clone().lock().await.clone().iter() {
+            for u in unlocked_user_state_wrapper.user_states.read().await.iter() {
                 if u.timer.is_some() && u.timer.unwrap().hour() == now.hour() && u.timer.unwrap().minute() == now.minute() {
                     log::info!("Send Reminder");
 

@@ -1,11 +1,10 @@
 use teloxide::types::ChatId;
-use std::{error::Error, fs, ops::Deref, path::Path, sync::Arc};
-use tokio::{sync::Mutex};
+use std::{error::Error, ops::Deref, path::Path, sync::Arc};
+use tokio::sync::RwLock;
 
 use crate::localize::*;
-
 use serde::{ Serialize, Deserialize };
-use serde::ser::StdError;
+
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserState {
@@ -15,7 +14,7 @@ pub struct UserState {
 }
 
 
-pub type UserStateVector = Arc<Mutex<Vec<UserState>>>;
+pub type UserStateVector = Arc<RwLock<Vec<UserState>>>;
 
 
 /// The UserStateWrapper handles the managing of user state and can be savely used by the commands to read
@@ -29,13 +28,13 @@ pub struct UserStateWrapper {
 impl UserStateWrapper {
     pub fn new() -> Self {
         UserStateWrapper {
-            user_states: Arc::new(Mutex::new(Vec::new())),
+            user_states: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
     
     pub async fn user_state_exists(&self, chat_id: ChatId) -> bool {
-        for u in self.user_states.clone().lock().await.iter() {
+        for u in self.user_states.read().await.iter() {
             if u.chat_id == chat_id {
                 return true;
             }
@@ -58,7 +57,7 @@ impl UserStateWrapper {
                 timer: None,
         };
         
-        for u in self.user_states.lock().await.clone().iter() {
+        for u in self.user_states.read().await.iter() {
             if u.chat_id == chat_id {
                 return u.clone();
             }
@@ -74,7 +73,7 @@ impl UserStateWrapper {
     /// A bool, `true` if the given ChatId had already a UserStage which have been updated.
     /// `false` if a UserState with the given ChatId has been saved for the first time.
     pub async fn update_userstate(&self, user_state: UserState) -> bool {
-        for u in self.user_states.lock().await.iter_mut() {
+        for u in self.user_states.write().await.iter_mut() {
             if u.chat_id == user_state.chat_id {
                 *u = user_state.clone();
                 
@@ -84,14 +83,14 @@ impl UserStateWrapper {
         };
 
         // If there has been no user_state saved, the function will get here and add a new UserState element
-        self.user_states.lock().await.push(user_state);
+        self.user_states.write().await.push(user_state);
         
         false
     }
 
     
     pub async fn write_states_to_file(&self, file_path: &str) -> Result<(), Box<dyn Error>> {
-        match serde_json::to_string_pretty(self.user_states.lock().await.deref()) {
+        match serde_json::to_string_pretty(self.user_states.read().await.deref()) {
             Ok(json_string) => { 
                 match tokio::fs::write(
                     &Path::new(file_path), 
@@ -111,7 +110,7 @@ impl UserStateWrapper {
                 match serde_json::from_str(&file_string) {
                     Ok(object) => {
                         let mut userstates: Vec<UserState> = object;
-                        let mut userstate_lock = self.user_states.lock().await;
+                        let mut userstate_lock = self.user_states.write().await;
                         userstate_lock.clear();
                         userstate_lock.append(&mut userstates);
                         Ok(())
@@ -128,7 +127,7 @@ impl UserStateWrapper {
 
 #[cfg(test)]
 mod tests {
-    const test_file_path: &str = "testfile.csv";
+    const TEST_FILE_PATH: &str = "testfile.json";
 
     use std::fs;
 
@@ -138,7 +137,7 @@ mod tests {
 
     impl Drop for TestfileHandling {
         fn drop(&mut self) {
-            if fs::remove_file(test_file_path).is_err() {
+            if fs::remove_file(TEST_FILE_PATH).is_err() {
                 println!("Warning: Test File couldn't be removed because it most likely did not exist.");
             }
         }
@@ -178,16 +177,16 @@ mod tests {
         };
         user_state_wrapper.update_userstate(user_state).await;
 
-        assert!(user_state_wrapper.write_states_to_file(&test_file_path).await.is_ok());
-        assert!(Path::new(test_file_path).exists());
+        assert!(user_state_wrapper.write_states_to_file(&TEST_FILE_PATH).await.is_ok());
+        assert!(Path::new(TEST_FILE_PATH).exists());
     }
 
     #[tokio::test]
     async fn test_load_userstate() {
         let user_state_wrapper = UserStateWrapper::new();
-        assert!(user_state_wrapper.load_states_from_file("testdata/test_userstate_loading.csv").await.is_ok());
+        assert!(user_state_wrapper.load_states_from_file("testdata/test_userstate_loading.json").await.is_ok());
 
-        assert_eq!(user_state_wrapper.user_states.lock().await.len(), 2);
+        assert_eq!(user_state_wrapper.user_states.read().await.len(), 2);
         assert_eq!(user_state_wrapper.find_userstate(ChatId(654321)).await.language, Language::German);
     }
 }
