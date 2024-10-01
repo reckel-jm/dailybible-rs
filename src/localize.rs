@@ -66,10 +66,10 @@ pub fn msg_not_implemented_yet(lang: &Language) -> String {
     }
 }
 
-pub fn msg_error_enter_language(lang: &Language) -> String {
+pub fn msg_select_language(lang: &Language) -> String {
     match lang {
-        Language::English => String::from("You need to specify a language, use either /setlang en or /setlang de"),
-        Language::German => String::from("Du musst eine Sprache angeben, entweder /setlang de oder /setlang en")
+        Language::English => String::from("Please choose which language you would like to set."),
+        Language::German => String::from("Bitte wählen Sie die Sprache aus, die sie einstellen möchten.")
     }
 }
 

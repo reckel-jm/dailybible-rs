@@ -2,6 +2,7 @@ use std::{ops::Deref, sync::Arc, time, env};
 
 use chrono::{NaiveTime, Timelike};
 use localize::msg_biblereading_not_found;
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 use teloxide::{ prelude::*, types::ParseMode::*, utils::command::BotCommands, RequestError };
 use tokio::signal;
 
@@ -61,13 +62,17 @@ async fn main() {
         log::warn!("Could not set up the commands.");
     }
 
-    let handler = Update::filter_message()
-            .branch(dptree::entry()
+    let message_handler = Update::filter_message()
                 .filter_command::<Command>()
-                .endpoint(answer)
-            );
+                .endpoint(answer);
 
-    
+    let callback_handler = Update::filter_callback_query()
+            .endpoint(answer_button);
+
+    let handler = dptree::entry()
+        .branch(message_handler)
+        .branch(callback_handler);
+
     let bot_arc = Arc::new(bot.clone());
     let user_state_wrapper_arc = Arc::new(user_state_wrapper);
 
@@ -109,11 +114,25 @@ async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: Arc<Us
         Command::Start => bot.send_message(msg.chat.id, "This bot helps you to read your Bible daily. Type /help for more information").await?,
         Command::SetTimer { timer_string } => bot_set_timer(bot, msg, user_state_wrapper.clone(), timer_string).await?,
         Command::UserInformation => send_user_information(bot, msg, user_state_wrapper.clone()).await?,
-        Command::SetLang { lang_string } => set_language(bot, msg, user_state_wrapper.clone(), lang_string).await?,
+        Command::SetLang { lang_string } => set_language(bot, msg.chat.id, user_state_wrapper.clone(), lang_string).await?,
     };  
     Ok(())
 }
 
+
+async fn answer_button(bot: Bot, callback: CallbackQuery, user_state_wrapper: Arc<UserStateWrapper>)  -> ResponseResult<()> {
+    match callback.data {
+        Some(callback_string) => {
+            match callback_string.as_str() {
+                "German" => { set_language(bot, callback.from.id.into(), user_state_wrapper, "de".to_string()).await; },
+                "English" => { set_language(bot, callback.from.id.into(), user_state_wrapper, "en".to_string()).await; },
+                _ => { log::warn!("Received callback {} which isn't implemented.", callback_string); }
+            }
+        }
+        None => {}
+    };
+    Ok(())
+}
 
 /// This function is used to send the daily reminder to the user
 /// 
@@ -172,20 +191,27 @@ async fn send_not_implemented(bot: Bot, msg: Message, user_state_wrapper: Arc<Us
 }
 
 
-async fn set_language(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>, lang_str: String) -> Result<Message, RequestError> {
-    let mut user_state = user_state_wrapper.find_userstate(msg.chat.id).await;
+async fn set_language(bot: Bot, chat_id: ChatId, user_state_wrapper: Arc<UserStateWrapper>, lang_str: String) -> Result<Message, RequestError> {
+    let mut user_state = user_state_wrapper.find_userstate(chat_id).await;
     match lang_str.to_lowercase().as_str() {
         "de" => { user_state.language = Language::German; },
         "en" => { user_state.language = Language::English; },
         _ => {
+                let keyboard = InlineKeyboardMarkup::new(vec!{
+                    vec![InlineKeyboardButton::callback("English", "English")],
+                    vec![InlineKeyboardButton::callback("Deutsch", "German")]
+                });
+
                 return bot.send_message(
-                    msg.chat.id, 
-                    msg_error_enter_language(&user_state.language)
-                ).await;
+                    chat_id, 
+                    msg_select_language(&user_state.language)
+                )
+                .reply_markup(keyboard)
+                .await;
         }
     };
     user_state_wrapper.update_userstate(user_state.clone()).await;
-    bot.send_message(msg.chat.id, msg_language_set(&user_state.language)).await
+    bot.send_message(chat_id, msg_language_set(&user_state.language)).await
 }
 
 
