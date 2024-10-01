@@ -124,8 +124,8 @@ async fn answer_button(bot: Bot, callback: CallbackQuery, user_state_wrapper: Ar
     match callback.data {
         Some(callback_string) => {
             match callback_string.as_str() {
-                "German" => { set_language(bot, callback.from.id.into(), user_state_wrapper, "de".to_string()).await; },
-                "English" => { set_language(bot, callback.from.id.into(), user_state_wrapper, "en".to_string()).await; },
+                "German" => { let _ = set_language(bot, callback.from.id.into(), user_state_wrapper, "de".to_string()).await; },
+                "English" => { let _ = set_language(bot, callback.from.id.into(), user_state_wrapper, "en".to_string()).await; },
                 _ => { log::warn!("Received callback {} which isn't implemented.", callback_string); }
             }
         }
