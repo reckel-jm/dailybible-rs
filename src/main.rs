@@ -336,7 +336,3 @@ async fn handle_save_current_userstates(user_state_wrapper_arc: Arc<UserStateWra
         Err(error) => log::warn!("Could not save user state file: {}", error.to_string())
     }
 }
-
-fn json_save(input: String) -> String {
-    input.replace("-", "\\-")
-}
