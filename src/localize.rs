@@ -1,5 +1,6 @@
 use chrono::NaiveTime;
 use serde::{Deserialize, Serialize};
+use teloxide::utils::markdown::escape;
 
 use crate::biblereading::BibleReading;
 
@@ -15,15 +16,15 @@ pub fn msg_biblereading(lang: &Language, biblereading: BibleReading) -> String {
         Language::English => {
             format!(
                 "*📖 This is a reminder to read the Bible today*: \n\nOT: {}\nNT: {}", 
-                biblereading.old_testament_reading,
-                biblereading.new_testament_reading
+                escape(&biblereading.old_testament_reading),
+                escape(&biblereading.new_testament_reading)
             )
         },
         Language::German => {
             format!(
                 "*📖 Dies ist eine Erinnerung, heute in der Bibel zu lesen*: \n\nAT: {}\nNT: {}", 
-                biblereading.old_testament_reading,
-                biblereading.new_testament_reading
+                escape(&biblereading.old_testament_reading),
+                escape(&biblereading.new_testament_reading)
             )
         }
     }
@@ -32,7 +33,7 @@ pub fn msg_biblereading(lang: &Language, biblereading: BibleReading) -> String {
 pub fn msg_biblereading_not_found(lang: &Language) -> String {
     match lang {
         Language::English => "This is a reminder to read your bible!".to_string(),
-        Language::German => "Dies ist eine Erinnerung, auch heute in der Bibel zu lesen.".to_string()
+        Language::German => "Dies ist eine Erinnerung, heute in der Bibel zu lesen.".to_string()
     }
 }
 

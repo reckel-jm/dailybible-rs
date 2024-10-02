@@ -151,20 +151,28 @@ async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper_arc: 
 
     match biblereading::get_todays_biblereading() {
         Ok(todays_biblereading) => {
-            let _ = bot.send_message(
+            log::info!("Send todays Biblereading to {}", chat_id.to_string());
+            match bot.send_message(
                 chat_id,
                 msg_biblereading(&userstate.language, todays_biblereading)
             )
             .parse_mode(teloxide::types::ParseMode::MarkdownV2)
-            .await;
+            .await {
+                Ok(_) => log::info!("Sending completed!"),
+                Err(error) => log::error!("An error occurred while sending the request to {}: {}", chat_id.to_string(), error.to_string())
+            }
+            
         },
         Err(error) => {     
             log::error!("{}", error.to_string());
 
-            let _ = bot.send_message(
+            match bot.send_message(
                 chat_id,
                 msg_biblereading_not_found(&userstate.language)
-            ).await;
+            ).await {
+                Ok(_) => log::warn!("Today's Bible reading not found. Sent message to {}.", chat_id.to_string()),
+                Err(error) => log::error!("An error occurred while sending message to {}: {}", chat_id.to_string(), error.to_string())
+            }
         }
     };
 
@@ -327,4 +335,8 @@ async fn handle_save_current_userstates(user_state_wrapper_arc: Arc<UserStateWra
         Ok(_) => log::info!("Saved user states to {}", user_state_file),
         Err(error) => log::warn!("Could not save user state file: {}", error.to_string())
     }
+}
+
+fn json_save(input: String) -> String {
+    input.replace("-", "\\-")
 }
