@@ -6,14 +6,40 @@ use crate::localize::*;
 use serde::{ Serialize, Deserialize };
 
 
+/// Here the State of a User is specified which is the Single Point of Truth for all user data.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserState {
+    /// The ChatId of the user or group chat
     pub chat_id: ChatId,
+    /// The language which the user has set up
     pub language: Language,
+    /// The timer which is configured
     pub timer: Option<chrono::NaiveTime>,
 }
 
 
+/// The type of the UserStateVector which assures accessibility over several threads and functions.
+/// As the UserStateVector is an `Arc<Rwlock<Vec<UserState>>>`, accessing the inner content is done with the RwLock functions read() and write()
+/// 
+/// # Example
+/// ```rust
+/// use std::sync::Arc;
+/// use tokio::sync::RwLock;
+/// use teloxide::types::ChatId;
+/// use crate::localize::*;
+/// 
+/// let user_state = UserState {
+///     chat_id: ChatId(123456),
+///     language: Language::German,
+///     timer: None,
+/// };
+/// let user_state_vector: UserStateVector = Arc::new(
+///     RwLock::new(
+///         vec![user_state]
+///     )
+/// );
+/// assert_eq!(user_state_vector.read().await.len(), 1);
+/// ```
 pub type UserStateVector = Arc<RwLock<Vec<UserState>>>;
 
 
@@ -188,5 +214,20 @@ mod tests {
 
         assert_eq!(user_state_wrapper.user_states.read().await.len(), 2);
         assert_eq!(user_state_wrapper.find_userstate(ChatId(654321)).await.language, Language::German);
+    }
+
+    #[tokio::test]
+    async fn test_userstatevector() {
+        let user_state = UserState {
+            chat_id: ChatId(123456),
+            language: Language::German,
+            timer: None,
+        };
+        let user_state_vector: UserStateVector = Arc::new(
+            RwLock::new(
+                vec![user_state]
+            )
+        );
+        assert_eq!(user_state_vector.read().await.len(), 1);
     }
 }

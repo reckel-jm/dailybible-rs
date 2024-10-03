@@ -21,7 +21,7 @@ const DEFAULT_USER_STATE_FILE_PATH: &str = "userstates.json";
 const USER_STATE_ENV: &str = "TELOXIDE_USERSTATEFILE";
 
 
-/// This enum contains all the commands which are available
+/// Here are all commands which the bot understands 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
 enum Command {
@@ -120,6 +120,21 @@ async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: Arc<Us
 }
 
 
+/// This function handles callbacks which come in from clicked inline buttons. 
+/// A callback consists of an `Option<callback_string>` which contains a kind of "message" 
+/// which is sent by the button when clicked.
+/// The ChatId can be gained by `callback.from.into()
+/// 
+/// # Params (provided by the Dispatcher)
+/// - `bot`: the Teloxide Bot
+/// - `callback`: the CallbackQuery which contains information about the Callback and the sender
+/// - `user_state_wrapper`: The UserStateWrapper which allows to access the User State
+/// 
+/// # Returns
+/// A ResponseResult. 
+/// 
+/// # Note
+/// As this function is async, it should be called with `await`.
 async fn answer_button(bot: Bot, callback: CallbackQuery, user_state_wrapper: Arc<UserStateWrapper>)  -> ResponseResult<()> {
     match callback.data {
         Some(callback_string) => {
@@ -190,6 +205,7 @@ async fn send_daily_reminder(bot: Bot, chat_id: ChatId, user_state_wrapper_arc: 
 }       
 
 
+/// This function can be used for future features which haven't been implemented yet.
 #[allow(dead_code)]
 async fn send_not_implemented(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
     let language: Language = user_state_wrapper.find_userstate(msg.chat.id).await.language;
@@ -199,6 +215,24 @@ async fn send_not_implemented(bot: Bot, msg: Message, user_state_wrapper: Arc<Us
 }
 
 
+/// This command sets the language of the bot.
+/// 
+/// # Params
+/// - `bot`: The telegram bot (it can be cloned)
+/// - `chat_id`: the ChatId of the user (where to send the message to)
+/// - `user_state_wrapper_arc`: An Arc of the UserStateWrapper
+/// - `lang_str`: A String which is given by the end user specifying the desired language
+/// 
+/// # Behavior
+/// The behavior is depending on the `lang_str` parameter.
+/// If no `lang_str` is specified or the `lang_str` value is unknown, buttons with language selections will be send.
+/// If `lang_str` is `en` or `de`, the languages will be set accordingly.
+/// 
+/// # Returns
+/// A ResponseResult. 
+/// 
+/// # Note
+/// As this function is async, it should be called with `await`.
 async fn set_language(bot: Bot, chat_id: ChatId, user_state_wrapper: Arc<UserStateWrapper>, lang_str: String) -> Result<Message, RequestError> {
     let mut user_state = user_state_wrapper.find_userstate(chat_id).await;
     match lang_str.to_lowercase().as_str() {
