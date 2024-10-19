@@ -81,6 +81,14 @@ pub fn msg_timer_updated(lang: &Language, time: &NaiveTime) -> String {
     }
 }
 
+pub fn msg_timer_unset(lang: &Language) -> String {
+    match lang {
+        Language::English => format!("The daily timer has been unset"),
+        Language::German => format!("Die tägliche Erinnerung wurde deaktiviert"),
+    }
+}
+
+
 pub fn msg_error_timer_update(lang: &Language) -> String {
     match lang {
         Language::English => String::from("The format was not valid. Please use the function with a valid time (for example /settimer 08:00)."),

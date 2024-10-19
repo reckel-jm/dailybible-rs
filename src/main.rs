@@ -31,6 +31,8 @@ enum Command {
     SendDailyReminder,
     #[command(description="Setup a daily timer for a given time (hh:mm)", parse_with="split")]
     SetTimer { timer_string: String },
+    #[command(description="Unsets any set timer")]
+    UnsetTimer,
     #[command(description="Show help message")]
     Help,
     #[command(description="Send user/chat information (for debugging purposes)")]
@@ -113,6 +115,7 @@ async fn answer(bot: Bot, msg: Message, cmd: Command, user_state_wrapper: Arc<Us
         Command::SendDailyReminder => send_daily_reminder(bot, msg.chat.id, user_state_wrapper.clone()).await?,
         Command::Start => bot.send_message(msg.chat.id, "This bot helps you to read your Bible daily. Type /help for more information").await?,
         Command::SetTimer { timer_string } => bot_set_timer(bot, msg, user_state_wrapper.clone(), timer_string).await?,
+        Command::UnsetTimer => bot_unset_timer(bot, msg, user_state_wrapper.clone()).await?,
         Command::UserInformation => send_user_information(bot, msg, user_state_wrapper.clone()).await?,
         Command::SetLang { lang_string } => set_language(bot, msg.chat.id, user_state_wrapper.clone(), lang_string).await?,
     };  
@@ -257,6 +260,14 @@ async fn set_language(bot: Bot, chat_id: ChatId, user_state_wrapper: Arc<UserSta
 }
 
 
+/// Set the timer to a specific time which is parsed from `timer_tring` in the format `hh:mm`. If
+/// no string is provided, an error message will be generated.
+///
+/// # Params
+/// - `bot`: The telegram bot (it can be cloned)
+/// - `chat_id`: the ChatId of the user (where to send the message to)
+/// - `user_state_wrapper_arc`: An Arc of the UserStateWrapper
+/// - `timer_string`: The string to be parsed to set the timer
 async fn bot_set_timer(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>, timer_string: String) -> Result<Message, RequestError> {
     let mut user_state = user_state_wrapper.find_userstate(msg.chat.id).await;
 
@@ -273,6 +284,27 @@ async fn bot_set_timer(bot: Bot, msg: Message, user_state_wrapper: Arc<UserState
 }
 
 
+/// Unsets any set timer and responses with a message
+/// # Params
+/// - `bot`: The telegram bot (it can be cloned)
+/// - `chat_id`: the ChatId of the user (where to send the message to)
+/// - `user_state_wrapper_arc`: An Arc of the UserStateWrapper
+async fn bot_unset_timer(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
+    let mut user_state = user_state_wrapper.find_userstate(msg.chat.id).await;
+
+    user_state.timer = None;
+
+    user_state_wrapper.update_userstate(user_state.clone()).await;
+    
+    bot.send_message(msg.chat.id, msg_timer_unset(&user_state.language)).await
+}
+
+/// This function sends all user information **in English language** about the chat to the chat
+///
+/// # Params
+/// - `bot`: The telegram bot (it can be cloned)
+/// - `chat_id`: the ChatId of the user (where to send the message to)
+/// - `user_state_wrapper_arc`: An Arc of the UserStateWrapper
 async fn send_user_information(bot: Bot, msg: Message, user_state_wrapper: Arc<UserStateWrapper>) -> Result<Message, RequestError> {
     if user_state_wrapper.user_state_exists(msg.chat.id).await {
         bot.send_message(
