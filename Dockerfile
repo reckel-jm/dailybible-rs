@@ -1,35 +1,41 @@
-# Build stage
-FROM clux/muslrust:1.80.0 AS builder
+FROM rust:1.85.0-slim-bookworm as builder
 
-# Set the working directory
-WORKDIR /usr/src/dailybible-rs
-
-# Copy all project files
-COPY . .
-
-# Build the project with the musl target
-RUN cargo build --release --target x86_64-unknown-linux-musl
-
-# Runtime stage
-FROM alpine:3.18
-
-# Install CA certificates for HTTPS requests
-RUN apk add --no-cache ca-certificates
-
-# Create a non-root user for security
-RUN adduser -D dailybible
-
-# Set the working directory for the runtime
+# Create new build dir
+RUN USER=root cargo new --bin app
 WORKDIR /app
 
-# Copy the compiled binary from the builder stage
-COPY --from=builder /usr/src/dailybible-rs/target/x86_64-unknown-linux-musl/release/dailybible-rs /app/
+# copy over your manifests
+COPY ./Cargo.lock ./Cargo.lock
+COPY ./Cargo.toml ./Cargo.toml
+
+# this build step will cache your dependencies
+RUN apt update && \
+    apt install -y libssl-dev openssl pkg-config
+RUN cargo build --release
+RUN rm src/*.rs
+
+# copy your source tree
+COPY ./src ./src
+
+# build for release
+RUN rm ./target/release/deps/*
+RUN cargo build --release
+
+# our final base
+FROM debian:bookworm-slim
+WORKDIR /app
+
+# image 'debian:bookworm-slim' needs ca-certificates package for TLS
+RUN apt-get update && \
+    apt install -y ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 
 # Copy the schedule.csv file into the same directory as the binary
 COPY schedule.csv /app/
 
-# Set the user to run the container
-USER dailybible
+# copy the build artifact from the build stage,
+COPY --from=builder /app/target/release/dailybible-rs .
 
-# Run the bot
-CMD ["/app/dailybible-rs"]
+# set the startup command to run your binary
+CMD ["./dailybible-rs"]
