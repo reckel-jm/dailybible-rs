@@ -1,14 +1,5 @@
 # Build stage
-FROM rust:1.80 AS builder
-
-# Install musl-tools and OpenSSL development libraries
-RUN apt-get update && apt-get install -y \
-    musl-tools \
-    pkg-config \
-    libssl-dev
-
-# Add the musl target for compatibility with Alpine
-RUN rustup target add x86_64-unknown-linux-musl
+FROM clux/muslrust:1.80.0 AS builder
 
 # Set the working directory
 WORKDIR /usr/src/dailybible-rs
