@@ -32,7 +32,8 @@ RUN apt-get update && \
 
 
 # Copy the schedule.csv file into the same directory as the binary
-COPY input /app/
+RUN mkdir /app/input
+COPY input /app/input/
 
 # Create a userdata dir which can be mounted later
 RUN mkdir /app/userdata
