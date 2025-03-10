@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use chrono::{Local, NaiveDate};
+use chrono::{Datelike, Local, NaiveDate};
 
 #[derive(Debug, Clone)]
 pub struct BibleReading {
@@ -49,12 +49,18 @@ pub fn get_todays_biblereading() -> Result<BibleReading, BibleReadingNotFoundErr
 }
 
 fn get_biblereading_for_date(search_date: NaiveDate) -> Result<BibleReading, BibleReadingNotFoundError> {
-    let csv_reader_result = csv::Reader::from_path("schedule.csv");
+    // We use the default year 2000 as the year does not matter in an annual schedule.
+    const DEFAULT_YEAR: i32 = 2000;
+    
+    // Change the year in the search_date
+    let search_date: NaiveDate = search_date.with_year(DEFAULT_YEAR).unwrap();
+
+    let csv_reader_result = csv::Reader::from_path("input/schedule.csv");
     if csv_reader_result.is_err() {
         return Err(BibleReadingNotFoundError::new(ErrorCause::InputFileNotFound));
     }
     let csv_reader = csv_reader_result.unwrap();
-
+    dbg!("Approach CSV Reader");
     for record in csv_reader.into_records() {
         match record {
             Ok(string_record) => {
@@ -65,15 +71,15 @@ fn get_biblereading_for_date(search_date: NaiveDate) -> Result<BibleReading, Bib
                     });
                 }
 
-                let date: Result<NaiveDate, chrono::ParseError> = NaiveDate::parse_from_str(string_record.get(0).unwrap(), "%m-%d-%y");
-
-                match date {
+                match NaiveDate::parse_from_str(&format!("{}-{}", string_record.get(0).unwrap(), DEFAULT_YEAR), "%m-%d-%Y") {
                     // The date can be parsed from string and we have a NaiveDate
-                    Ok(unwrapped_date) => {
-                        if unwrapped_date == search_date {
+                    Ok(date) => {
+                        let normalized_date = date.with_year(DEFAULT_YEAR).unwrap();
+                        dbg!(normalized_date);
+                        if normalized_date == search_date {
                             return Ok(
                                 BibleReading {
-                                    date: unwrapped_date,
+                                    date: normalized_date,
                                     old_testament_reading: string_record.get(2).unwrap().to_string(),
                                     new_testament_reading: string_record.get(1).unwrap().to_string(),
                                 }
@@ -82,6 +88,9 @@ fn get_biblereading_for_date(search_date: NaiveDate) -> Result<BibleReading, Bib
                     },
                     // The date can not be parsed from string (most likely because of an invalid format)
                     Err(_) => { 
+                        dbg!("Error!");
+                        dbg!(string_record.get(0).unwrap());
+
                         return Err(BibleReadingNotFoundError {
                             error_cause: ErrorCause::InvalidFormat,
                             error_string: format!("Can not parse date {}", string_record.get(0).unwrap())
@@ -117,7 +126,7 @@ mod tests {
 
     #[test]
     fn date_cannot_be_found() {
-        let date = NaiveDate::from_ymd_opt(2012, 7, 3).unwrap();
+        let date = NaiveDate::from_ymd_opt(2012, 2, 29).unwrap();
 
         let search_result = get_biblereading_for_date(date);
         assert!(search_result.is_err());

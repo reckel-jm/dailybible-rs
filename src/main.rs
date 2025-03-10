@@ -15,7 +15,7 @@ use crate::userstate::*;
 
 
 /// The default file path for the file where the user states will be saved
-const DEFAULT_USER_STATE_FILE_PATH: &str = "userstates.json";
+const DEFAULT_USER_STATE_FILE_PATH: &str = "userdata/userstates.json";
 
 /// The name of the environment variable where the path of the user_state_file_path can be specified
 const USER_STATE_ENV: &str = "TELOXIDE_USERSTATEFILE";

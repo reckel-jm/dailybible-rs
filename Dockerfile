@@ -32,7 +32,10 @@ RUN apt-get update && \
 
 
 # Copy the schedule.csv file into the same directory as the binary
-COPY schedule.csv /app/
+COPY input /app/
+
+# Create a userdata dir which can be mounted later
+RUN mkdir /app/userdata
 
 # copy the build artifact from the build stage,
 COPY --from=builder /app/target/release/dailybible-rs .
