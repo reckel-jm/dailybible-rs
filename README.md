@@ -2,7 +2,7 @@
 
 Dailybible is a Telegram bot which will send you a Bible reading notification for every day of the year. If you follow this Bible reading plan 365 days along, you will have made it through the whole Bible.
 
-The source code is written in Rust. Feel free to download and run the bot by yourself.
+The source code is written in Rust. Feel free to download and run the bot by yourself. If you don't want that, you can find a bot instance on Telegram: [@biblereadingscheduler_bot](https://t.me/biblereadingscheduler_bot).
 
 ## Environment Variables
 
