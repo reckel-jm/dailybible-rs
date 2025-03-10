@@ -1,4 +1,4 @@
-# Dailybible-rs – a Telegram bot for daily Bible reading–cover to cover in one year.
+# Dailybible-rs is a Telegram bot for reading your Bible daily–and cover to cover in one year.
 
 Dailybible is a Telegram bot which will send you a Bible reading notification for every day of the year. If you follow this Bible reading plan 365 days along, you will have made it through the whole Bible.
 
