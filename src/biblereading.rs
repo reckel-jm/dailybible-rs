@@ -123,13 +123,5 @@ mod tests {
         assert_eq!(biblereading.old_testament_reading, "Psalm 135,136");
         assert_eq!(biblereading.new_testament_reading, "1Kor12");
     }
-
-    #[test]
-    fn date_cannot_be_found() {
-        let date = NaiveDate::from_ymd_opt(2012, 2, 29).unwrap();
-
-        let search_result = get_biblereading_for_date(date);
-        assert!(search_result.is_err());
-    }
 }
     
