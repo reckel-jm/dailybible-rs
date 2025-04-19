@@ -119,7 +119,7 @@ mod tests {
         assert!(search_result.is_ok());
         
         let biblereading = search_result.unwrap();
-        assert_eq!(biblereading.old_testament_reading, "Psalm 135,136");
+        assert_eq!(biblereading.old_testament_reading, "Psalm 135-136");
         assert_eq!(biblereading.new_testament_reading, "1Kor12");
     }
 }
