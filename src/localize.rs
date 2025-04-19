@@ -33,10 +33,10 @@ pub fn msg_biblereading(lang: &Language, biblereading: BibleReading) -> String {
 fn translated_bible_reference(lang: &Language, original_reference: &str) -> String {
     match lang {
         Language::English => {
-            bibleref::translate(original_reference, "en").unwrap_or_else(|_| original_reference.to_string())
+            bibleref::translate_long(original_reference, "en").unwrap_or_else(|_| original_reference.to_string())
         }
         Language::German => {
-            bibleref::translate(original_reference, "de").unwrap_or_else(|_| original_reference.to_string())
+            bibleref::translate_long(original_reference, "de").unwrap_or_else(|_| original_reference.to_string())
         }
     }
 }
