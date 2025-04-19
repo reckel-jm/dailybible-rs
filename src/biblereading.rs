@@ -75,7 +75,6 @@ fn get_biblereading_for_date(search_date: NaiveDate) -> Result<BibleReading, Bib
                     // The date can be parsed from string and we have a NaiveDate
                     Ok(date) => {
                         let normalized_date = date.with_year(DEFAULT_YEAR).unwrap();
-                        dbg!(normalized_date);
                         if normalized_date == search_date {
                             return Ok(
                                 BibleReading {

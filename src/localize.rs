@@ -16,16 +16,27 @@ pub fn msg_biblereading(lang: &Language, biblereading: BibleReading) -> String {
         Language::English => {
             format!(
                 "*📖 This is a reminder to read the Bible today*: \n\nOT: {}\nNT: {}", 
-                escape(&biblereading.old_testament_reading),
-                escape(&biblereading.new_testament_reading)
+                escape(&translated_bible_reference(lang, &biblereading.old_testament_reading)),
+                escape(&translated_bible_reference(lang, &biblereading.new_testament_reading))
             )
         },
         Language::German => {
             format!(
                 "*📖 Dies ist eine Erinnerung, heute in der Bibel zu lesen*: \n\nAT: {}\nNT: {}", 
-                escape(&biblereading.old_testament_reading),
-                escape(&biblereading.new_testament_reading)
+                escape(&translated_bible_reference(lang, &biblereading.old_testament_reading)),
+                escape(&translated_bible_reference(lang, &biblereading.new_testament_reading))
             )
+        }
+    }
+}
+
+fn translated_bible_reference(lang: &Language, original_reference: &str) -> String {
+    match lang {
+        Language::English => {
+            bibleref::translate(original_reference, "en").unwrap_or_else(|_| original_reference.to_string())
+        }
+        Language::German => {
+            bibleref::translate(original_reference, "de").unwrap_or_else(|_| original_reference.to_string())
         }
     }
 }
