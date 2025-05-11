@@ -1,11 +1,12 @@
 [package]
 name = "dailybible-rs"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Jan Martin Reckel jm.reckel@t-online.de"]
 description = "Telegram bot for daily Bible reading"
 keywords = ["bible", "telegram", "bot"]
 license = "GPL-3.0"
+repository = "https://github.com/reckel-jm/dailybible-rs"
 
 [profile.release]
 strip = true
