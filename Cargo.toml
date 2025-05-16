@@ -1,6 +1,6 @@
 [package]
 name = "dailybible-rs"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 authors = ["Jan Martin Reckel jm.reckel@t-online.de"]
 description = "Telegram bot for daily Bible reading"
